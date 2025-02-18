@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Input, Radio, Tooltip, List } from 'antd';
+import { Input, Radio, Tooltip, List, Dropdown, MenuProps } from 'antd';
 import VirtualList from 'rc-virtual-list';
-import './Popup.css';
+import { copyToClipboard } from './util';
+import './Popup.less';
 
 interface Bookmark {
   id: string;
@@ -16,6 +17,37 @@ interface Tab {
   favIconUrl?: string;
   windowId?: number;
 }
+
+enum MenuKey {
+  SwitchTab = '2',
+  OpenNewTab = '3',
+  CopyUrl = '4',
+  CloseTab = '5',
+}
+
+const items: NonNullable<MenuProps['items']> = [
+  {
+    key: MenuKey.SwitchTab,
+    label: '切换到该页签',
+    extra: '←',
+  },
+  {
+    key: MenuKey.OpenNewTab,
+    label: '打开新标签页',
+    extra: 'Enter',
+  },
+  {
+    key: MenuKey.CloseTab,
+    label: '关闭标签页',
+    extra: '→',
+    danger: true,
+  },
+  {
+    key: MenuKey.CopyUrl,
+    label: '复制url',
+    extra: 'C',
+  },
+];
 
 function ShortCut({ desc, short }: { short: string; desc: string }) {
   return (
@@ -34,15 +66,6 @@ export const Popup = () => {
   const [allTabs, setAllTabs] = useState<Tab[]>([]);
 
   console.log({ bookmarks, currentWindowTabs, allTabs });
-
-  const keyword = useMemo(() => {
-    return searchValue?.trim();
-  }, [searchValue]);
-
-  const computedBookmarks = useMemo(() => {
-    if (!keyword) return bookmarks;
-    return bookmarks.filter((item) => item.title.includes(keyword));
-  }, [keyword, bookmarks]);
 
   const getData = () => {
     // 获取当前窗口的标签页
@@ -76,6 +99,51 @@ export const Popup = () => {
     getData();
   }, []);
 
+  const keyword = useMemo(() => {
+    return searchValue?.trim();
+  }, [searchValue]);
+
+  const computedBookmarks = useMemo(() => {
+    if (!keyword) return bookmarks;
+    return bookmarks.filter((item) => item.title.includes(keyword));
+  }, [keyword, bookmarks]);
+
+  const openUrl = (url: string) => {
+    if (!url) return;
+    chrome.tabs.create({ url });
+  };
+
+  const switchToTab = (tab: Tab) => {
+    chrome.tabs.update(tab.id!, { active: true });
+    chrome.windows.update(tab.windowId!, { focused: true });
+  };
+
+  const closeTab = (tab: Tab) => {
+    chrome.tabs.remove(tab.id!, () => {
+      // TODO:重新获取数据
+      getData();
+    });
+  };
+
+  const handleMenuClick = (key: string, item: Tab) => {
+    switch (key) {
+      case MenuKey.SwitchTab:
+        switchToTab(item);
+        break;
+      case MenuKey.OpenNewTab:
+        openUrl(item.url!);
+        break;
+      case MenuKey.CopyUrl:
+        copyToClipboard(item.url!);
+        break;
+      case MenuKey.CloseTab:
+        closeTab(item);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div className="container">
       <Input
@@ -104,14 +172,21 @@ export const Popup = () => {
         value={windowType}
         onChange={(e) => setWindowType(e.target.value)}
       />
-      <div>已打开的标签页</div>
+      <div className="group-title">已打开的标签页({currentWindowTabs.length}个)</div>
       <List>
         <VirtualList data={currentWindowTabs} height={400} itemHeight={47} itemKey="id">
           {(item: Tab) => (
             <List.Item key={item.id}>
-              <div>
+              <div className="list-item">
                 <img width={16} height={16} src={item.favIconUrl} />
-                <span>{item.title}</span>
+                <div className="list-item-title" onClick={() => openUrl(item.url!)}>
+                  {item.title}
+                </div>
+                <Dropdown
+                  menu={{ items, onClick: (menuInfo) => handleMenuClick(menuInfo.key, item) }}
+                >
+                  <a onClick={(e) => e.preventDefault()}>操作</a>
+                </Dropdown>
               </div>
             </List.Item>
           )}

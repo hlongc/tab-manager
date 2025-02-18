@@ -1,8 +1,8 @@
-import { defineConfig } from 'vite'
-import { crx } from '@crxjs/vite-plugin'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import { crx } from '@crxjs/vite-plugin';
+import react from '@vitejs/plugin-react';
 
-import manifest from './src/manifest'
+import manifest from './src/manifest';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -18,5 +18,5 @@ export default defineConfig(({ mode }) => {
     },
 
     plugins: [crx({ manifest }), react()],
-  }
-})
+  };
+});

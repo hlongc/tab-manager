@@ -1,8 +1,8 @@
-import { defineManifest } from '@crxjs/vite-plugin'
-import packageData from '../package.json'
+import { defineManifest } from '@crxjs/vite-plugin';
+import packageData from '../package.json';
 
 //@ts-ignore
-const isDev = process.env.NODE_ENV == 'development'
+const isDev = process.env.NODE_ENV == 'development';
 
 export default defineManifest({
   name: `${packageData.displayName || packageData.name}${isDev ? ` ➡️ Dev` : ''}`,
@@ -53,4 +53,4 @@ export default defineManifest({
   chrome_url_overrides: {
     newtab: 'newtab.html',
   },
-})
+});

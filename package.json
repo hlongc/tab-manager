@@ -36,6 +36,7 @@
     "@vitejs/plugin-react": "^4.1.0",
     "gulp": "^4.0.2",
     "gulp-zip": "^6.0.0",
+    "less": "^4.2.2",
     "prettier": "^3.0.3",
     "typescript": "^5.2.2",
     "vite": "^4.4.11"
