@@ -23,6 +23,7 @@
     "zip": "npm run build && node src/zip.js"
   },
   "dependencies": {
+    "ahooks": "^3.8.4",
     "antd": "^5.24.0",
     "rc-virtual-list": "^3.18.1",
     "react": "^18.2.0",

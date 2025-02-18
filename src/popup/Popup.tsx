@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Input, Radio, Tooltip, List, Dropdown, MenuProps } from 'antd';
-import VirtualList from 'rc-virtual-list';
+import { useMemoizedFn } from 'ahooks';
 import { copyToClipboard } from './util';
 import './Popup.less';
 
@@ -25,7 +25,7 @@ enum MenuKey {
   CloseTab = '5',
 }
 
-const items: NonNullable<MenuProps['items']> = [
+const tabItems: NonNullable<MenuProps['items']> = [
   {
     key: MenuKey.SwitchTab,
     label: '切换到该页签',
@@ -49,6 +49,24 @@ const items: NonNullable<MenuProps['items']> = [
   },
 ];
 
+const bookmarkItems: NonNullable<MenuProps['items']> = [
+  {
+    key: MenuKey.SwitchTab,
+    label: '切换到该页签',
+    extra: '←',
+  },
+  {
+    key: MenuKey.OpenNewTab,
+    label: '打开新标签页',
+    extra: 'Enter',
+  },
+  {
+    key: MenuKey.CopyUrl,
+    label: '复制url',
+    extra: 'C',
+  },
+];
+
 function ShortCut({ desc, short }: { short: string; desc: string }) {
   return (
     <>
@@ -64,6 +82,88 @@ export const Popup = () => {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [currentWindowTabs, setCurrentWindowTabs] = useState<Tab[]>([]);
   const [allTabs, setAllTabs] = useState<Tab[]>([]);
+
+  const [selectIndex, setSelectIndex] = useState<number>(-1);
+
+  // 滚动到目标元素
+  useEffect(() => {
+    const el = document.querySelector(`.list-item-${selectIndex}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [selectIndex]);
+
+  const openUrl = (url: string) => {
+    if (!url) return;
+    chrome.tabs.create({ url });
+  };
+
+  const switchToTab = (tab: Tab) => {
+    chrome.tabs.update(tab.id!, { active: true });
+    chrome.windows.update(tab.windowId!, { focused: true });
+  };
+
+  const closeTab = (tab: Tab) => {
+    chrome.tabs.remove(tab.id!, () => {
+      // TODO:重新获取数据
+      getData();
+    });
+  };
+
+  const handleKeyDown = useMemoizedFn((e: KeyboardEvent) => {
+    const computedTabsCount = computedTabs.length;
+    const computedBookmarksCount = computedBookmarks.length;
+    const itemCount = computedTabsCount + computedBookmarksCount;
+
+    const allItems = [...computedTabs, ...computedBookmarks];
+
+    switch (e.key.toLowerCase()) {
+      case 'arrowup':
+        e.preventDefault();
+        setSelectIndex(selectIndex <= 0 ? itemCount - 1 : selectIndex - 1);
+        break;
+      case 'arrowdown':
+        e.preventDefault();
+        setSelectIndex((selectIndex + 1) % itemCount);
+        break;
+      case 'arrowleft':
+        e.preventDefault();
+        if (selectIndex >= 0 && selectIndex < computedTabsCount) {
+          // 优先切换到已存在的标签页
+          switchToTab(computedTabs[selectIndex]);
+        } else {
+          openUrl(computedBookmarks[selectIndex - computedTabsCount].url!);
+        }
+        break;
+      case 'arrowright':
+        e.preventDefault();
+        if (selectIndex >= 0 && selectIndex < computedTabsCount) {
+          closeTab(computedTabs[selectIndex]);
+          // TODO: 关闭以后要重新设置索引
+        }
+        break;
+      case 'enter':
+        e.preventDefault();
+        if (selectIndex >= 0 && selectIndex < itemCount) {
+          openUrl(allItems[selectIndex].url!);
+        }
+        break;
+      case 'c':
+        e.preventDefault();
+        if (selectIndex >= 0 && selectIndex < itemCount) {
+          copyToClipboard(allItems[selectIndex].url!);
+        }
+        break;
+    }
+  });
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   console.log({ bookmarks, currentWindowTabs, allTabs });
 
@@ -90,6 +190,7 @@ export const Popup = () => {
     };
 
     chrome.bookmarks.getTree((bookmarkTreeNodes) => {
+      console.log('bookmarkTreeNodes', bookmarkTreeNodes);
       traverse(bookmarkTreeNodes);
       setBookmarks(ret);
     });
@@ -105,30 +206,26 @@ export const Popup = () => {
 
   const computedBookmarks = useMemo(() => {
     if (!keyword) return bookmarks;
-    return bookmarks.filter((item) => item.title.includes(keyword));
+    return bookmarks.filter((item) => item.title.includes(keyword) || item.url?.includes(keyword));
   }, [keyword, bookmarks]);
 
-  const openUrl = (url: string) => {
-    if (!url) return;
-    chrome.tabs.create({ url });
-  };
+  const computedTabs = useMemo(() => {
+    const tabs = windowType === 'current' ? currentWindowTabs : allTabs;
+    if (!keyword) return tabs;
+    return tabs.filter((item) => item.title?.includes(keyword) || item.url?.includes(keyword));
+  }, [keyword, currentWindowTabs, allTabs, windowType]);
 
-  const switchToTab = (tab: Tab) => {
-    chrome.tabs.update(tab.id!, { active: true });
-    chrome.windows.update(tab.windowId!, { focused: true });
-  };
+  // 根据搜索结果设置tab和bookmark默认选中索引
+  useEffect(() => {
+    setSelectIndex(0);
+  }, [computedTabs, computedBookmarks]);
 
-  const closeTab = (tab: Tab) => {
-    chrome.tabs.remove(tab.id!, () => {
-      // TODO:重新获取数据
-      getData();
-    });
-  };
-
-  const handleMenuClick = (key: string, item: Tab) => {
+  const handleMenuClick = (type: 'tab' | 'bookmark', key: string, item: Tab | Bookmark) => {
     switch (key) {
       case MenuKey.SwitchTab:
-        switchToTab(item);
+        if (type === 'tab') {
+          switchToTab(item as Tab);
+        }
         break;
       case MenuKey.OpenNewTab:
         openUrl(item.url!);
@@ -137,7 +234,9 @@ export const Popup = () => {
         copyToClipboard(item.url!);
         break;
       case MenuKey.CloseTab:
-        closeTab(item);
+        if (type === 'tab') {
+          closeTab(item as Tab);
+        }
         break;
       default:
         break;
@@ -171,27 +270,82 @@ export const Popup = () => {
         ]}
         value={windowType}
         onChange={(e) => setWindowType(e.target.value)}
+        style={{ marginBottom: 10 }}
       />
-      <div className="group-title">已打开的标签页({currentWindowTabs.length}个)</div>
-      <List>
-        <VirtualList data={currentWindowTabs} height={400} itemHeight={47} itemKey="id">
-          {(item: Tab) => (
-            <List.Item key={item.id}>
-              <div className="list-item">
-                <img width={16} height={16} src={item.favIconUrl} />
-                <div className="list-item-title" onClick={() => openUrl(item.url!)}>
-                  {item.title}
-                </div>
-                <Dropdown
-                  menu={{ items, onClick: (menuInfo) => handleMenuClick(menuInfo.key, item) }}
+      <div className="list-container">
+        {computedTabs.length > 0 && (
+          <>
+            <div className="group-title">已打开的标签页({computedTabs.length}个)</div>
+            <List
+              itemLayout="horizontal"
+              dataSource={computedTabs}
+              renderItem={(item, index) => (
+                <List.Item
+                  key={item.id}
+                  className={`list-item-${index} ${index === selectIndex ? 'selected' : ''}`}
                 >
-                  <a onClick={(e) => e.preventDefault()}>操作</a>
-                </Dropdown>
-              </div>
-            </List.Item>
-          )}
-        </VirtualList>
-      </List>
+                  <div className="list-item">
+                    <img width={16} height={16} src={item.favIconUrl} />
+                    <div className="list-item-title" onClick={() => openUrl(item.url!)}>
+                      {item.title}
+                    </div>
+                    <Dropdown
+                      menu={{
+                        items: tabItems,
+                        onClick: (menuInfo) => handleMenuClick('tab', menuInfo.key, item),
+                      }}
+                    >
+                      <a onClick={(e) => e.preventDefault()}>操作</a>
+                    </Dropdown>
+                  </div>
+                </List.Item>
+              )}
+            ></List>
+          </>
+        )}
+        {computedBookmarks.length > 0 && (
+          <>
+            <div className="group-title">收藏的书签({computedBookmarks.length}个)</div>
+            <List
+              itemLayout="horizontal"
+              dataSource={computedBookmarks}
+              renderItem={(item, index) => (
+                <List.Item
+                  key={item.id}
+                  className={`list-item-${computedTabs.length + index} ${
+                    selectIndex - computedTabs.length === index ? 'selected' : ''
+                  }`}
+                >
+                  <div className="list-item">
+                    <img
+                      width={16}
+                      height={16}
+                      src={`https://www.google.com/s2/favicons?domain=${new URL(item.url!).hostname}`}
+                      onError={(e) => {
+                        // 当Google Favicon服务失败时，尝试直接访问网站的favicon
+                        const target = e.target as HTMLImageElement;
+                        const domain = new URL(item.url!).origin;
+                        target.src = `${domain}/favicon.ico`;
+                      }}
+                    />
+                    <div className="list-item-title" onClick={() => openUrl(item.url!)}>
+                      {item.title}
+                    </div>
+                    <Dropdown
+                      menu={{
+                        items: bookmarkItems,
+                        onClick: (menuInfo) => handleMenuClick('bookmark', menuInfo.key, item),
+                      }}
+                    >
+                      <a onClick={(e) => e.preventDefault()}>操作</a>
+                    </Dropdown>
+                  </div>
+                </List.Item>
+              )}
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 };
