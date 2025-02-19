@@ -58,7 +58,7 @@
   display: flex;
   width: 100%;
   box-sizing: border-box;
-  padding-right: 20px;
+  padding: 0 20px 0 10px;
   align-items: center;
   gap: 10px;
   font-size: 12px;
@@ -66,9 +66,7 @@
   .list-item-title {
     display: inline-block;
     flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     cursor: pointer;
+    overflow: auto;
   }
 }

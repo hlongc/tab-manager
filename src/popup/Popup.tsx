@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Input, Radio, Tooltip, List, Dropdown, MenuProps } from 'antd';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Input, Radio, Tooltip, List, Dropdown, MenuProps, InputRef } from 'antd';
 import { useMemoizedFn } from 'ahooks';
 import { copyToClipboard } from './util';
 import './Popup.less';
@@ -82,7 +82,7 @@ export const Popup = () => {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [currentWindowTabs, setCurrentWindowTabs] = useState<Tab[]>([]);
   const [allTabs, setAllTabs] = useState<Tab[]>([]);
-
+  const inputRef = useRef<InputRef>(null);
   const [selectIndex, setSelectIndex] = useState<number>(-1);
 
   // 滚动到目标元素
@@ -158,6 +158,7 @@ export const Popup = () => {
   });
 
   useEffect(() => {
+    inputRef.current?.focus();
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
@@ -248,6 +249,7 @@ export const Popup = () => {
       <Input
         placeholder="搜索书签和标签页"
         value={searchValue}
+        ref={inputRef}
         onChange={(e) => setSearchValue(e.target.value)}
         suffix={
           <Tooltip title="刷新">
