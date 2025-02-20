@@ -25,6 +25,6 @@ export const copyToClipboard = (text: string) => {
 
 const isMacOS = navigator.platform.includes('Mac');
 
-export const getShortCut = (key: string): `⌘ + ${string}` | `Ctrl + ${string}` => {
-  return isMacOS ? (`⌘ + ${key}` as const) : (`Ctrl + ${key}` as const);
+export const getShortCut = (key: string, isMixed: boolean) => {
+  return isMixed ? (isMacOS ? `⌘ + ${key}` : `Ctrl + ${key}`) : key;
 };
