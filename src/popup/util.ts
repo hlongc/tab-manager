@@ -22,3 +22,9 @@ export const copyToClipboard = (text: string) => {
     document.body.removeChild(textArea);
   }
 };
+
+const isMacOS = navigator.platform.includes('Mac');
+
+export const getShortCut = (key: string): `⌘ + ${string}` | `Ctrl + ${string}` => {
+  return isMacOS ? (`⌘ + ${key}` as const) : (`Ctrl + ${key}` as const);
+};

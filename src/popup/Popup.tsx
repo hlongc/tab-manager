@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Input, Radio, Tooltip, List, Dropdown, MenuProps, InputRef } from 'antd';
 import { useMemoizedFn } from 'ahooks';
-import { copyToClipboard } from './util';
+import { copyToClipboard, getShortCut } from './util';
 import './Popup.less';
 
 interface Bookmark {
@@ -29,23 +29,23 @@ const tabItems: NonNullable<MenuProps['items']> = [
   {
     key: MenuKey.SwitchTab,
     label: '切换到该页签',
-    extra: '←',
+    extra: getShortCut('←'),
   },
   {
     key: MenuKey.OpenNewTab,
     label: '打开新标签页',
-    extra: 'Enter',
+    extra: getShortCut('Enter'),
   },
   {
     key: MenuKey.CloseTab,
     label: '关闭标签页',
-    extra: '→',
+    extra: getShortCut('→'),
     danger: true,
   },
   {
     key: MenuKey.CopyUrl,
     label: '复制url',
-    extra: 'C',
+    extra: getShortCut('C'),
   },
 ];
 
@@ -53,17 +53,17 @@ const bookmarkItems: NonNullable<MenuProps['items']> = [
   {
     key: MenuKey.SwitchTab,
     label: '切换到该页签',
-    extra: '←',
+    extra: getShortCut('←'),
   },
   {
     key: MenuKey.OpenNewTab,
     label: '打开新标签页',
-    extra: 'Enter',
+    extra: getShortCut('Enter'),
   },
   {
     key: MenuKey.CopyUrl,
     label: '复制url',
-    extra: 'C',
+    extra: getShortCut('C'),
   },
 ];
 
@@ -116,7 +116,9 @@ export const Popup = () => {
     const itemCount = computedTabsCount + computedBookmarksCount;
 
     const allItems = [...computedTabs, ...computedBookmarks];
-
+    // 检查是否按下了 Command(macOS) 或 Ctrl(Windows/Linux)
+    const isModifierKeyPressed = navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey;
+    // 打开、关闭、复制、切换操作都改成组合键触发，避免在输入框中按下←、→、c、Enter误触
     switch (e.key.toLowerCase()) {
       case 'arrowup':
         e.preventDefault();
@@ -127,6 +129,7 @@ export const Popup = () => {
         setSelectIndex((selectIndex + 1) % itemCount);
         break;
       case 'arrowleft':
+        if (!isModifierKeyPressed) return;
         e.preventDefault();
         if (selectIndex >= 0 && selectIndex < computedTabsCount) {
           // 优先切换到已存在的标签页
@@ -136,6 +139,7 @@ export const Popup = () => {
         }
         break;
       case 'arrowright':
+        if (!isModifierKeyPressed) return;
         e.preventDefault();
         if (selectIndex >= 0 && selectIndex < computedTabsCount) {
           closeTab(computedTabs[selectIndex]);
@@ -143,12 +147,14 @@ export const Popup = () => {
         }
         break;
       case 'enter':
+        if (!isModifierKeyPressed) return;
         e.preventDefault();
         if (selectIndex >= 0 && selectIndex < itemCount) {
           openUrl(allItems[selectIndex].url!);
         }
         break;
       case 'c':
+        if (!isModifierKeyPressed) return;
         e.preventDefault();
         if (selectIndex >= 0 && selectIndex < itemCount) {
           copyToClipboard(allItems[selectIndex].url!);
@@ -165,8 +171,6 @@ export const Popup = () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
-
-  console.log({ bookmarks, currentWindowTabs, allTabs });
 
   const getData = () => {
     // 获取当前窗口的标签页
@@ -191,7 +195,6 @@ export const Popup = () => {
     };
 
     chrome.bookmarks.getTree((bookmarkTreeNodes) => {
-      console.log('bookmarkTreeNodes', bookmarkTreeNodes);
       traverse(bookmarkTreeNodes);
       setBookmarks(ret);
     });
@@ -253,17 +256,23 @@ export const Popup = () => {
         onChange={(e) => setSearchValue(e.target.value)}
         suffix={
           <Tooltip title="刷新">
-            <img onClick={() => getData()} width={16} height={16} src="/icons/refresh.svg" />
+            <img
+              style={{ cursor: 'pointer' }}
+              onClick={() => getData()}
+              width={16}
+              height={16}
+              src="/icons/refresh.svg"
+            />
           </Tooltip>
         }
       />
       <div className="shortcuts-tips">
         快捷键：
         <ShortCut short="↑↓" desc="导航" />
-        <ShortCut short="Enter" desc="打开新标签页" />
-        <ShortCut short="左键" desc="切换到已打开的tab" />
-        <ShortCut short="右键" desc="关闭标签页" />
-        <ShortCut short="C" desc="复制链接" />
+        <ShortCut short={getShortCut('Enter')} desc="打开新标签页" />
+        <ShortCut short={getShortCut('←')} desc="切换到已打开的tab" />
+        <ShortCut short={getShortCut('→')} desc="关闭标签页" />
+        <ShortCut short={getShortCut('C')} desc="复制链接" />
       </div>
       <Radio.Group
         options={[
@@ -323,12 +332,6 @@ export const Popup = () => {
                       width={16}
                       height={16}
                       src={`https://www.google.com/s2/favicons?domain=${new URL(item.url!).hostname}`}
-                      onError={(e) => {
-                        // 当Google Favicon服务失败时，尝试直接访问网站的favicon
-                        const target = e.target as HTMLImageElement;
-                        const domain = new URL(item.url!).origin;
-                        target.src = `${domain}/favicon.ico`;
-                      }}
                     />
                     <div className="list-item-title" onClick={() => openUrl(item.url!)}>
                       {item.title}
