@@ -211,19 +211,26 @@ export const Popup = () => {
     getData();
   }, []);
 
+  const includes = (str: string, keyword: string) => {
+    if (!str) return false;
+    return str.toLowerCase().includes(keyword.toLowerCase());
+  };
+
   const keyword = useMemo(() => {
     return searchValue?.trim();
   }, [searchValue]);
 
   const computedBookmarks = useMemo(() => {
     if (!keyword) return bookmarks;
-    return bookmarks.filter((item) => item.title.includes(keyword) || item.url?.includes(keyword));
+    return bookmarks.filter(
+      (item) => includes(item.title, keyword) || includes(item.url!, keyword),
+    );
   }, [keyword, bookmarks]);
 
   const computedTabs = useMemo(() => {
     const tabs = windowType === 'current' ? currentWindowTabs : allTabs;
     if (!keyword) return tabs;
-    return tabs.filter((item) => item.title?.includes(keyword) || item.url?.includes(keyword));
+    return tabs.filter((item) => includes(item.title!, keyword) || includes(item.url!, keyword));
   }, [keyword, currentWindowTabs, allTabs, windowType]);
 
   // 根据搜索结果设置tab和bookmark默认选中索引
