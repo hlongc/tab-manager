@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Input, Radio, Tooltip, List, Dropdown, MenuProps, InputRef, Form } from 'antd';
-import { useMemoizedFn } from 'ahooks';
+import { Input, Radio, Tooltip, List, Dropdown, MenuProps, InputRef, Form, Select } from 'antd';
+import { useMemoizedFn, useMount } from 'ahooks';
 import { copyToClipboard, getShortCut } from './util';
 import './Popup.less';
+import { getConfigCache, getTabStats, setConfigCache } from '../background';
+import { SortType } from '../common';
 
 interface Bookmark {
   id: string;
@@ -16,6 +18,8 @@ interface Tab {
   url?: string;
   favIconUrl?: string;
   windowId?: number;
+  lastAccessed: number;
+  accessCount: number;
 }
 
 enum MenuKey {
@@ -43,7 +47,7 @@ export const Popup = () => {
   const [allTabs, setAllTabs] = useState<Tab[]>([]);
   const inputRef = useRef<InputRef>(null);
   const [selectIndex, setSelectIndex] = useState<number>(-1);
-
+  const [sortType, setSortType] = useState<SortType>();
   const tabItems: NonNullable<MenuProps['items']> = useMemo(() => {
     return [
       {
@@ -69,6 +73,20 @@ export const Popup = () => {
       },
     ];
   }, [isMixed]);
+
+  // 读取缓存
+  useMount(async () => {
+    const config = await getConfigCache();
+    const { isMixed, sortType, windowType } = config;
+    isMixed !== undefined && setIsMixed(isMixed);
+    sortType !== undefined && setSortType(sortType);
+    windowType !== undefined && setWindowType(windowType);
+  });
+
+  // 写入缓存
+  useEffect(() => {
+    setConfigCache({ isMixed, sortType, windowType });
+  }, [isMixed, sortType, windowType]);
 
   const bookmarkItems: NonNullable<MenuProps['items']> = useMemo(() => {
     return [
@@ -114,6 +132,36 @@ export const Popup = () => {
       getData();
     });
   };
+
+  const includes = (str: string, keyword: string | undefined) => {
+    if (!str) return false;
+    if (!keyword) return true;
+    return str.toLowerCase().includes(keyword.toLowerCase());
+  };
+
+  const keyword = useMemo(() => {
+    return searchValue?.trim();
+  }, [searchValue]);
+
+  const computedBookmarks = useMemo(() => {
+    if (!keyword) return bookmarks;
+    return bookmarks.filter(
+      (item) => includes(item.title, keyword) || includes(item.url!, keyword),
+    );
+  }, [keyword, bookmarks]);
+
+  const computedTabs = useMemo(() => {
+    const tabs = windowType === 'current' ? currentWindowTabs : allTabs;
+
+    let ret = tabs.filter((item) => includes(item.title!, keyword) || includes(item.url!, keyword));
+
+    if (sortType === SortType.Recent) {
+      ret.sort((a, b) => b.lastAccessed - a.lastAccessed);
+    } else if (sortType === SortType.Frequency) {
+      ret.sort((a, b) => b.accessCount - a.accessCount);
+    }
+    return ret;
+  }, [keyword, currentWindowTabs, allTabs, windowType, sortType]);
 
   const handleKeyDown = useMemoizedFn((e: KeyboardEvent) => {
     const computedTabsCount = computedTabs.length;
@@ -179,14 +227,28 @@ export const Popup = () => {
     };
   }, [isMixed]);
 
-  const getData = () => {
+  const getData = async () => {
+    // 获取访问统计数据
+    const tabStats = await getTabStats();
     // 获取当前窗口的标签页
     chrome.tabs.query({ currentWindow: true }, (tabs) => {
-      setCurrentWindowTabs(tabs);
+      setCurrentWindowTabs(
+        tabs.map((tab) => ({
+          ...tab,
+          lastAccessed: (tab as any).lastAccessed ?? tabStats[tab.id!]?.lastAccessed ?? 0,
+          accessCount: tabStats[tab.id!]?.accessCount ?? 0,
+        })),
+      );
     });
     // 获取所有窗口的标签页
     chrome.tabs.query({}, (tabs) => {
-      setAllTabs(tabs);
+      setAllTabs(
+        tabs.map((tab) => ({
+          ...tab,
+          lastAccessed: (tab as any).lastAccessed ?? tabStats[tab.id!]?.lastAccessed ?? 0,
+          accessCount: tabStats[tab.id!]?.accessCount ?? 0,
+        })),
+      );
     });
     // 获取书签
     const ret: Bookmark[] = [];
@@ -210,28 +272,6 @@ export const Popup = () => {
   useEffect(() => {
     getData();
   }, []);
-
-  const includes = (str: string, keyword: string) => {
-    if (!str) return false;
-    return str.toLowerCase().includes(keyword.toLowerCase());
-  };
-
-  const keyword = useMemo(() => {
-    return searchValue?.trim();
-  }, [searchValue]);
-
-  const computedBookmarks = useMemo(() => {
-    if (!keyword) return bookmarks;
-    return bookmarks.filter(
-      (item) => includes(item.title, keyword) || includes(item.url!, keyword),
-    );
-  }, [keyword, bookmarks]);
-
-  const computedTabs = useMemo(() => {
-    const tabs = windowType === 'current' ? currentWindowTabs : allTabs;
-    if (!keyword) return tabs;
-    return tabs.filter((item) => includes(item.title!, keyword) || includes(item.url!, keyword));
-  }, [keyword, currentWindowTabs, allTabs, windowType]);
 
   // 根据搜索结果设置tab和bookmark默认选中索引
   useEffect(() => {
@@ -314,7 +354,21 @@ export const Popup = () => {
       <div className="list-container">
         {computedTabs.length > 0 && (
           <>
-            <div className="group-title">已打开的标签页({computedTabs.length}个)</div>
+            <div className="group-title">
+              <span>已打开的标签页({computedTabs.length}个)</span>
+              <Select
+                placeholder="排序方式"
+                style={{ width: 100 }}
+                size="small"
+                options={[
+                  { label: '最近使用', value: SortType.Recent },
+                  { label: '使用频率', value: SortType.Frequency },
+                ]}
+                value={sortType}
+                onChange={setSortType}
+                allowClear
+              />
+            </div>
             <List
               itemLayout="horizontal"
               dataSource={computedTabs}
